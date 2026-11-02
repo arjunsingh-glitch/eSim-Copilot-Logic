@@ -349,6 +349,46 @@ class FaultIdentifier:
             ),
             "label": "model not found",
         },
+        {
+            "pattern": re.compile(
+                r"time\s*step\s+too\s+small|transient\s+analysis\s+failed",
+                re.IGNORECASE,
+            ),
+            "category": "Convergence Fault",
+            "severity": "Critical",
+            "suggested_action": (
+                "Transient integration failed to take a stable step. Relax "
+                "tolerances with `.options RELTOL=1e-3 ABSTOL=1e-6 VNTOL=1e-3`, "
+                "switch to `.options METHOD=GEAR`, and/or reduce source rise "
+                "times. If discontinuities remain, add UIC to `.tran`."
+            ),
+            "label": "Timestep Too Small",
+        },
+        {
+            "pattern": re.compile(r"iteration\s+limit\s+reached", re.IGNORECASE),
+            "category": "Convergence Fault",
+            "severity": "Critical",
+            "suggested_action": (
+                "The Newton-Raphson loop hit its cap. Raise transient "
+                "iterations with `.options ITL4=100` (and ITL1=500 / ITL2=100 "
+                "for DC). If it still stalls, loosen RELTOL or add a small "
+                "series resistance at stiff nonlinear devices."
+            ),
+            "label": "Iteration Limit Reached",
+        },
+        {
+            "pattern": re.compile(r"gmin\s+stepping\s+failed", re.IGNORECASE),
+            "category": "Convergence Fault",
+            "severity": "Critical",
+            "suggested_action": (
+                "DC Gmin homotopy did not converge. Increase the homotopy "
+                "budget with `.options GMINSTEPS=200` and try a slightly "
+                "larger conductance via `.options GMIN=1e-10`. Combine with "
+                "`.options SRCSTEPS=100` and ITL1=500 if the bias point is "
+                "still unreachable."
+            ),
+            "label": "Gmin Stepping Failed",
+        },
     )
 
     def __init__(self, error_log: str) -> None:
