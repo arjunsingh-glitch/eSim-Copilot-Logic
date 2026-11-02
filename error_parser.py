@@ -389,6 +389,45 @@ class FaultIdentifier:
             ),
             "label": "Gmin Stepping Failed",
         },
+        {
+            "pattern": re.compile(
+                r"less than\s+2\s+connections\s+at\s+node|node\s+.*\s+is\s+floating",
+                re.IGNORECASE,
+            ),
+            "category": "Connectivity Fault",
+            "severity": "High",
+            "suggested_action": (
+                "Check for unconnected pins or attach a high-value leakage "
+                "resistor (1G) to ground."
+            ),
+            "label": "Floating Node",
+        },
+        {
+            "pattern": re.compile(
+                r"no ground node|ground node 0 not found",
+                re.IGNORECASE,
+            ),
+            "category": "Connectivity Fault",
+            "severity": "Critical",
+            "suggested_action": (
+                "Add a reference ground (Node 0) to the schematic."
+            ),
+            "label": "Missing Ground",
+        },
+        {
+            "pattern": re.compile(
+                r"voltage source .* and inductor .* formed a loop|"
+                r"parallel voltage sources",
+                re.IGNORECASE,
+            ),
+            "category": "Connectivity Fault",
+            "severity": "Critical",
+            "suggested_action": (
+                "Avoid ideal voltage sources in parallel or in an inductor "
+                "loop; add small series resistance."
+            ),
+            "label": "Voltage Source Loop",
+        },
     )
 
     def __init__(self, error_log: str) -> None:
