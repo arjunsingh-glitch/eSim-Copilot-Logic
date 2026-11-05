@@ -534,21 +534,40 @@ class FaultIdentifier:
         },
     )
 
+    _FALLBACK_TOKEN_RE = re.compile(r"\b(?:error|fatal)\b", re.IGNORECASE)
+
     def __init__(self, error_log: str) -> None:
         if error_log is None:
             raise TypeError("error_log must be a string, not None")
         self.error_log = error_log
 
+    @staticmethod
+    def _evidence_window(lines: Sequence[str], index: int) -> str:
+        """Join the matched line with one neighbor on each side, if present."""
+        start = max(0, index - 1)
+        end = min(len(lines), index + 2)
+        return "\n".join(lines[start:end])
+
     def identify(self) -> List[Fault]:
-        """Return every matching fault, in log-line order (deduplicated)."""
+        """Return every matching fault, in log-line order (deduplicated).
+
+        ``evidence`` is a three-line window (previous, match, next) clipped
+        at the log boundaries. Lines that mention ``error`` or ``fatal`` but
+        match no ``_RULES`` pattern are emitted as unclassified fallbacks.
+        """
         seen: set = set()
         faults: List[Fault] = []
+        lines = self.error_log.splitlines()
 
-        for line_no, line in enumerate(self.error_log.splitlines(), start=1):
+        for index, line in enumerate(lines):
+            line_no = index + 1
+            evidence = self._evidence_window(lines, index)
+            matched_rule = False
+
             for rule in self._RULES:
-                match = rule["pattern"].search(line)
-                if not match:
+                if not rule["pattern"].search(line):
                     continue
+                matched_rule = True
                 key = (rule["label"], line.strip())
                 if key in seen:
                     continue
@@ -559,10 +578,31 @@ class FaultIdentifier:
                         severity=rule["severity"],
                         suggested_action=rule["suggested_action"],
                         matched_pattern=rule["label"],
-                        evidence=line.strip(),
+                        evidence=evidence,
                         line_numbers=(line_no,),
                     )
                 )
+
+            if matched_rule or not self._FALLBACK_TOKEN_RE.search(line):
+                continue
+
+            fallback_key = ("fallback_regex", line.strip())
+            if fallback_key in seen:
+                continue
+            seen.add(fallback_key)
+            faults.append(
+                Fault(
+                    category="Unhandled Simulation Error",
+                    severity="Unknown",
+                    suggested_action=(
+                        "Review the raw Ngspice log around this line for "
+                        "unclassified engine details."
+                    ),
+                    matched_pattern="fallback_regex",
+                    evidence=evidence,
+                    line_numbers=(line_no,),
+                )
+            )
         return faults
 
     def identify_first(self) -> Optional[Fault]:
