@@ -428,6 +428,58 @@ class FaultIdentifier:
             ),
             "label": "Voltage Source Loop",
         },
+        {
+            "pattern": re.compile(
+                r"unknown subckt|subcircuit .* not found",
+                re.IGNORECASE,
+            ),
+            "category": "Subcircuit Definition Missing",
+            "severity": "High",
+            "suggested_action": (
+                "Verify .subckt name, instance prefix (X), or check if model "
+                "file is included via .include."
+            ),
+            "label": "Undefined Subcircuit",
+        },
+        {
+            "pattern": re.compile(
+                r"unknown parameter|syntax error in line",
+                re.IGNORECASE,
+            ),
+            "category": "Netlist Syntax Error",
+            "severity": "Medium",
+            "suggested_action": (
+                "Inspect component parameter spelling, missing value, or "
+                "malformed directive."
+            ),
+            "label": "Syntax Error",
+        },
+        {
+            "pattern": re.compile(
+                r"cannot open|no such file or directory",
+                re.IGNORECASE,
+            ),
+            "category": "File System Error",
+            "severity": "High",
+            "suggested_action": (
+                "Verify model/lib file path, case-sensitivity, and relative "
+                "directory location."
+            ),
+            "label": "File Not Found",
+        },
+        {
+            "pattern": re.compile(
+                r"vector .* not found|unable to find vector",
+                re.IGNORECASE,
+            ),
+            "category": "Control Command Fault",
+            "severity": "Medium",
+            "suggested_action": (
+                "Ensure node name in .control plot/print statements matches "
+                "actual netlist node names."
+            ),
+            "label": "Vector Not Found",
+        },
     )
 
     def __init__(self, error_log: str) -> None:
