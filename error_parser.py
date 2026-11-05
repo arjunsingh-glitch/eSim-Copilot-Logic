@@ -480,6 +480,58 @@ class FaultIdentifier:
             ),
             "label": "Vector Not Found",
         },
+        {
+            "pattern": re.compile(
+                r"event-driven simulation failed",
+                re.IGNORECASE,
+            ),
+            "category": "Digital Simulation Fault",
+            "severity": "High",
+            "suggested_action": (
+                "Check digital node states, clock timing, or bridge model "
+                "configurations."
+            ),
+            "label": "Digital Simulation Failed",
+        },
+        {
+            "pattern": re.compile(
+                r"node .* is not an a/d node|mismatch in bridge connection",
+                re.IGNORECASE,
+            ),
+            "category": "Bridge Misconfiguration",
+            "severity": "High",
+            "suggested_action": (
+                "Ensure ADC/DAC bridge components are correctly inserted "
+                "between analog and digital domains."
+            ),
+            "label": "Bridge Node Mismatch",
+        },
+        {
+            "pattern": re.compile(
+                r"division by zero|nan detected in vector",
+                re.IGNORECASE,
+            ),
+            "category": "Math Evaluation Error",
+            "severity": "High",
+            "suggested_action": (
+                "Check custom behavioral source (B-source) expressions for "
+                "log/division boundaries."
+            ),
+            "label": "Division by Zero / NaN",
+        },
+        {
+            "pattern": re.compile(
+                r"out of memory|malloc failed",
+                re.IGNORECASE,
+            ),
+            "category": "System Resource Fault",
+            "severity": "Critical",
+            "suggested_action": (
+                "Reduce simulation duration, increase step size, or clear "
+                "memory logs."
+            ),
+            "label": "Out of Memory",
+        },
     )
 
     def __init__(self, error_log: str) -> None:
