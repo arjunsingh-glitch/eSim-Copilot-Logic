@@ -54,6 +54,9 @@ class SimulationAuditor:
 
     def _is_output(self, key):
         tail = key.split(".")[-1]
+        # Ngspice ASCII RAW names look like v(out); compare the node, not the wrapper
+        if tail.startswith("v(") and tail.endswith(")"):
+            tail = tail[2:-1]
         return any(tail.startswith(p) for p in self._OUTPUT_PREFIXES)
 
     # FIX(BUG-2.1): accept float point indices, skip complex RAW, never coerce NaN/Inf to 0.0
