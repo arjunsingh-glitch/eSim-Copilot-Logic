@@ -30,7 +30,7 @@ class SubcktHierarchyResolver:
         tree = [
             self._expand_instance(comp, subcircuits, [], 0)
             for comp in components
-            if (comp.get("kind_key") or comp.get("kind")) == "X"
+            if comp["kind_key"] == "X"
         ]
 
         pin_errors = self._audit_pins(tree)
@@ -93,7 +93,7 @@ class SubcktHierarchyResolver:
                 current["instances"].append(NetlistSanitizer(stripped)._parse_component(stripped, line_no))
 
     def _expand_instance(self, inst, subcircuits, ancestors, _depth=0):
-        if (inst.get("kind_key") or inst.get("kind", "X")) != "X":
+        if inst.get("kind_key") != "X":
             return None
         key = str(inst.get("params") or "").split()[0].lower()
         node = {"name": inst["name"], "subckt": key, "nodes": inst["nodes"], "children": []}
