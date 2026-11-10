@@ -22,6 +22,18 @@ class SubcktHierarchyResolver:
         visited = set()
         unresolved = []
 
+        # FIX(N13): parse inline .subckt blocks that live in the top-level deck body BEFORE
+        # processing .include/.lib files. Without this, any .subckt defined directly in the
+        # netlist (not in a separate library) is invisible to the resolver, so hierarchy is
+        # never built and pin-mismatch auditing silently produces no results.
+        inline_directives = [
+            d["text"] for d in directives
+            if not d["text"].lower().startswith((".include", ".lib"))
+        ]
+        if any(t.lower().startswith(".subckt") for t in inline_directives):
+            body_lines = "\n".join(inline_directives)
+            self._parse_library_text(body_lines, "<inline>", subcircuits, 0, visited, unresolved)
+
         for d in directives:
             name = d["text"].split()[0].lower().strip('.')
             if name in {"include", "lib"}:
@@ -44,7 +56,11 @@ class SubcktHierarchyResolver:
     def _ingest_source(self, directive_text, subcircuits, depth, visited, unresolved):
         if depth >= _MAX_INCLUDE_DEPTH:
             return
-        m = _PATH_TOKEN_RE.search(directive_text.split(maxsplit=1)[-1])
+        # FIX(1E): guard against directives with no path argument (e.g. bare ".include")
+        parts = directive_text.split(maxsplit=1)
+        if len(parts) < 2:
+            return
+        m = _PATH_TOKEN_RE.search(parts[1])
         if not m:
             return
         candidate = m.group(1) or m.group(2)
@@ -69,11 +85,15 @@ class SubcktHierarchyResolver:
         unresolved.append(candidate)
 
     # FIX(BUG-3.2): case-normalize .control/.endc so mixed-case control blocks are skipped
+    # FIX(1C): instantiate NetlistSanitizer once and reuse — avoids O(n²) allocation churn
     def _parse_library_text(self, text, source_id, subcircuits, depth, visited, unresolved):
         in_control = False
         current = None
-        for line_no, statement in NetlistSanitizer(text)._join_continuations(NetlistSanitizer(text)._split_physical_lines()):
-            stripped = statement.strip()
+        s = NetlistSanitizer(text)
+        for line_no, statement in s._join_continuations(s._split_physical_lines()):
+            # FIX(N3): strip inline comments BEFORE testing for directives/instances so that
+            # a trailing $ or ; comment can't produce false keyword matches or pin errors.
+            stripped = s._strip_inline_comment(statement.strip())
             lowered = stripped.lower()
             if lowered.startswith(".control"):
                 in_control = True
@@ -90,12 +110,17 @@ class SubcktHierarchyResolver:
                     subcircuits[current["name"].lower()] = current
                     current = None
             elif current and stripped.upper().startswith("X"):
-                current["instances"].append(NetlistSanitizer(stripped)._parse_component(stripped, line_no))
+                # FIX(N4): reuse the outer sanitizer instance instead of creating a new one per line
+                current["instances"].append(s._parse_component(stripped, line_no))
 
     def _expand_instance(self, inst, subcircuits, ancestors, _depth=0):
         if inst.get("kind_key") != "X":
             return None
-        key = str(inst.get("params") or "").split()[0].lower()
+        # FIX(1D): use the explicitly stored subckt_name from _parse_component instead of
+        # re-deriving it from params (which used arity=2 and got the wrong token).
+        # FIX(N5): split params safely to avoid IndexError when params is an empty string.
+        params_first = (inst.get("params") or "").split()
+        key = (inst.get("subckt_name") or (params_first[0] if params_first else "")).lower()
         node = {"name": inst["name"], "subckt": key, "nodes": inst["nodes"], "children": []}
         if _depth >= _MAX_INSTANCE_DEPTH:
             node["truncated"] = True

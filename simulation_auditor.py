@@ -61,11 +61,38 @@ class SimulationAuditor:
 
     # FIX(BUG-2.1): accept float point indices, skip complex RAW, never coerce NaN/Inf to 0.0
     def _parse_ascii_raw(self, text: str):
+        # FIX(4C): guard against huge raw files that would block the GUI thread when
+        # body.split() allocates a gigantic token list in one shot.
+        _RAW_SIZE_LIMIT = 20_000_000  # 20 MB
+        if len(text) > _RAW_SIZE_LIMIT:
+            return {
+                "vectors": {},
+                "nan_vectors": set(),
+                "notes": [
+                    f"raw file too large ({len(text):,} bytes) to audit inline; "
+                    "run in a worker thread"
+                ],
+            }
+
+        # FIX(2B): detect Binary: section early and bail out cleanly instead of
+        # returning silently-empty results that look like "no errors".
+        if re.search(r"(?im)^Binary:\s*$", text):
+            return {
+                "vectors": {},
+                "nan_vectors": set(),
+                "notes": ["binary RAW not audited (only ASCII supported)"],
+            }
+
         flags_match = re.search(r"(?im)^Flags:\s*(.*)$", text)
         flags = flags_match.group(1).strip().lower() if flags_match else ""
 
         nvars_match = re.search(r"No\.\s*Variables:\s*(\d+)", text)
         nvars = int(nvars_match.group(1)) if nvars_match else 0
+
+        # FIX(2A): honour No. Points so a truncated/corrupt file doesn't get
+        # extra garbage samples read beyond the declared point count.
+        npts_match = re.search(r"No\.\s*Points:\s*(\d+)", text)
+        npts = int(npts_match.group(1)) if npts_match else None
 
         if "complex" in flags:
             return {
@@ -92,7 +119,11 @@ class SimulationAuditor:
             tokens = body.split()
             stride = nvars + 1
             cursor = 0
+            points_read = 0
             while cursor + stride <= len(tokens):
+                # FIX(2A): cap at declared No. Points to avoid reading truncated garbage
+                if npts is not None and points_read >= npts:
+                    break
                 try:
                     float(tokens[cursor])
                 except ValueError:
@@ -113,10 +144,13 @@ class SimulationAuditor:
                         samples[variables[idx]].append(raw_val)
                 if truncated:
                     break
+                points_read += 1
 
         notes = []
         if truncated:
             notes.append("Truncated due to malformed data")
+        if npts is not None and points_read < npts and not truncated:
+            notes.append(f"Expected {npts} points but only read {points_read} (file may be truncated)")
         if nan_vectors:
             notes.append("Non-finite samples skipped in: " + ", ".join(sorted(nan_vectors)))
         return {"vectors": samples, "nan_vectors": nan_vectors, "notes": notes}

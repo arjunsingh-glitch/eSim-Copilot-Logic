@@ -2,6 +2,7 @@ import logging
 import os
 from typing import Optional
 
+from netlist_fixer import NetlistFixer
 from netlist_sanitizer import NetlistSanitizer
 from prompt_builder import PromptBuilder
 from simulation_auditor import SimulationAuditor
@@ -47,6 +48,14 @@ class HardwareContextEngine:
             raise ValueError("netlist_path is empty")
 
         if isinstance(netlist_path, str) and os.path.isfile(netlist_path):
+            # FIX(4B): guard against oversized netlists blocking the GUI thread on a sync read
+            _NETLIST_SIZE_LIMIT = 5 * 1024 * 1024  # 5 MB
+            netlist_size = os.path.getsize(netlist_path)
+            if netlist_size > _NETLIST_SIZE_LIMIT:
+                raise ValueError(
+                    f"netlist too large ({netlist_size:,} bytes > {_NETLIST_SIZE_LIMIT:,}); "
+                    "open in a worker thread"
+                )
             with open(netlist_path, "r", encoding="utf-8", errors="replace") as f:
                 netlist_text = f.read()
             netlist_dir = os.path.dirname(os.path.abspath(netlist_path))
@@ -64,8 +73,21 @@ class HardwareContextEngine:
 
         auditor_data = {"stats": [], "errors": [], "notes": []}
         if raw_path and os.path.isfile(raw_path):
-            with open(raw_path, "r", encoding="utf-8", errors="replace") as f:
-                auditor_data = SimulationAuditor().audit(f.read())
+            # FIX(4B): guard against oversized raw files; SimulationAuditor has its own
+            # per-text cap (20 MB) but we avoid even reading the file into memory here.
+            _RAW_SIZE_LIMIT = 20 * 1024 * 1024  # 20 MB
+            raw_size = os.path.getsize(raw_path)
+            if raw_size > _RAW_SIZE_LIMIT:
+                auditor_data = {
+                    "stats": [], "errors": [],
+                    "notes": [
+                        f"raw file too large ({raw_size:,} bytes > {_RAW_SIZE_LIMIT:,}); "
+                        "run auditor in a worker thread"
+                    ],
+                }
+            else:
+                with open(raw_path, "r", encoding="utf-8", errors="replace") as f:
+                    auditor_data = SimulationAuditor().audit(f.read())
 
         prompt = PromptBuilder(error_data, sanitizer, resolver, auditor_data).build_system_prompt()
         return {
@@ -74,6 +96,10 @@ class HardwareContextEngine:
             "auditor_data": auditor_data,
             "prompt": prompt,
         }
+
+    def patch_netlist(self, netlist_path, fix_directive):
+        """Backup the netlist and insert ``fix_directive`` before ``.end``."""
+        return NetlistFixer().apply_fix(netlist_path, fix_directive)
 
 
 # FIX(BUG-1.3): keep raw_path instead of swallowing it as a positional error_data

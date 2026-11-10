@@ -5,6 +5,13 @@ class PromptBuilder:
         self.resolver = resolver_data
         self.auditor = auditor_data
 
+    # FIX(N9): sanitize any netlist-derived string before interpolating into the LLM prompt.
+    # Braces are used as f-string delimiters; newlines break section structure; both could
+    # be exploited by a crafted netlist to inject fake sections into the prompt.
+    @staticmethod
+    def _safe(s: object) -> str:
+        return str(s).replace("{", "(").replace("}", ")").replace("\n", " ").replace("\r", " ")
+
     def build_system_prompt(self) -> str:
         prompt = "You are an expert EDA debugging assistant for FOSSEE eSim. Treat the following SPICE context as the ABSOLUTE TRUTH, ignore vision topology if it contradicts this.\n\n"
         
@@ -16,7 +23,12 @@ class PromptBuilder:
         
         prompt += "\n=== SPICE TOPOLOGY ===\n"
         for comp in self.netlist.get("components", []):
-            prompt += f"{comp['kind']} {comp['name']} | Nodes: {', '.join(comp['nodes'])} | Params: {comp['params']}\n"
+            # FIX(N9): apply _safe() to all netlist-derived fields to prevent prompt injection
+            kind   = self._safe(comp['kind'])
+            cname  = self._safe(comp['name'])
+            nodes  = ", ".join(self._safe(n) for n in comp['nodes'])
+            params = self._safe(comp['params'])
+            prompt += f"{kind} {cname} | Nodes: {nodes} | Params: {params}\n"
             
         # FIX(BUG-5.2): pin_errors may be list[str] or list[dict]; do not index strings as dicts
         prompt += "\n=== SUBCIRCUIT HIERARCHY & PIN ERRORS ===\n"
